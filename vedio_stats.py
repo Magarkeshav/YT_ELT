@@ -21,6 +21,7 @@ def get_playlist_id():
         response.raise_for_status()
 
         data = response.json()
+        
         channel_items = data['items'][0]
         channel_playlist_id = channel_items['contentDetails']['relatedPlaylists']['uploads']
         print("Uploads Playlist ID:", channel_playlist_id)
@@ -53,8 +54,8 @@ def get_videoids(playlist_id):
 
             data = response.json()
             
-            for item in data.get('items', []):  # ✅ fixed: items not item
-                video_id = item['contentDetails']['videoId']  # ✅ fixed: videoId not video_id
+            for item in data.get('items', []):  
+                video_id = item['contentDetails']['videoId']
                 video_ids.append(video_id)
                 
             pageToken = data.get('nextPageToken')
@@ -68,9 +69,49 @@ def get_videoids(playlist_id):
         raise e
 
 
+def extract_video_data(video_ids):
+    extracted_data = []
+    
+    def batch_list(video_id_lst, batch_size):
+        for i in range(0, len(video_id_lst), batch_size):
+            yield video_id_lst[i:i + batch_size]
+
+    try:
+        for batch in batch_list(video_ids, maxResults):
+            video_ids_str = ",".join(batch)
+            
+            url = f"https://youtube.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,statistics&id={video_ids_str}&key={API_KEY}"
+
+            response = requests.get(url)
+            response.raise_for_status()
+
+            data = response.json()
+            
+            for item in data.get('items', []):
+                video_id = item['id']
+                snippet = item['snippet']
+                contentDetails = item['contentDetails']
+                statistics = item['statistics']
+                
+                video_data = {
+                    "video_id": video_id,
+                    "title": snippet['title'],
+                    "publishedAt": snippet['publishedAt'],
+                    "duration": contentDetails['duration'],
+                    "viewCount": statistics.get('viewCount'),
+                    "likeCount": statistics.get('likeCount'),
+                    "commentCount": statistics.get('commentCount')
+                }
+                
+                extracted_data.append(video_data)
+        
+        return extracted_data
+                
+    except requests.exceptions.RequestException as e:
+        raise e
+
+
 if __name__ == "__main__":
     playlist_id = get_playlist_id()
-    if playlist_id:
-        video_ids = get_videoids(playlist_id)
-        print("Total videos fetched:", len(video_ids))
-        print(video_ids[:902])  # show first 10 video IDs
+    video_ids = get_videoids(playlist_id)
+    print(extract_video_data(video_ids))
